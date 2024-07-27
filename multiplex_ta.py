@@ -13,19 +13,19 @@ async def create_client():
 data_objs = {stream: cd.GetData(stream) for stream in streams}
 
 def filter_data(kline):
-    # Extract relevant fields from kline data
+    # Extract relevant fields from kline data and convert to numeric
     data = [
         kline["t"],  # Timestamp
-        kline["o"],  # Open
-        kline["h"],  # High
-        kline["l"],  # Low
-        kline["c"],  # Close
-        kline["v"],  # Volume
+        float(kline["o"]),  # Open (converted to float)
+        float(kline["h"]),  # High (converted to float)
+        float(kline["l"]),  # Low (converted to float)
+        float(kline["c"]),  # Close (converted to float)
+        float(kline["v"]),  # Volume (converted to float)
         kline["T"],  # Close time
-        kline["q"],  # Quote asset volume
-        kline["n"],  # Number of trades
-        kline["V"],  # Taker buy base asset volume
-        kline["Q"],  # Taker buy quote asset volume
+        round(float(kline["q"]), 2),  # Quote asset volume (converted to float and rounded to 2 decimal places)
+        round(float(kline["n"]), 2),  # Number of trades (converted to float and rounded to 2 decimal places)
+        round(float(kline["V"]), 2),  # Taker buy base asset volume (converted to float and rounded to 2 decimal places)
+        round(float(kline["Q"]), 2),  # Taker buy quote asset volume (converted to float and rounded to 2 decimal places)
         kline["B"],  # Ignore
     ]
     return data
