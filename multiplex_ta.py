@@ -44,6 +44,9 @@ async def analyse_data(data):
         # Update the DataFrame with the new kline data
         df = data_obj.calculate_indicators(kline)
 
+        # Print the kline name once at the top
+        print(f"{stream}")
+
         # Print the updated DataFrame for debugging
         print("Updated DataFrame:")
         print(df)
