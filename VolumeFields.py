@@ -1,4 +1,6 @@
-from enum import Enum 
+# file name: VolumeFields.py
+
+from enum import Enum
 
 class VolumeAnalysisResultItem(Enum):
     AverageBuySize = "AverageBuySize"
