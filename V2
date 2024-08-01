@@ -1,0 +1,171 @@
+# file name: collect_data.py
+
+import pandas as pd
+import pandas_ta as ta
+
+class GetData:
+
+    columns = ["Date", "Open", "High", "Low", "Close", "Volume", "Ignore", "Quote_Volume", "Trades_Count", "Buy_Vol", "Buy_Vol_Val", "x"]
+
+    def __init__(self, event):
+        self.name = event
+        self.df = pd.DataFrame(columns=self.columns)
+        self.df.set_index("Date", inplace=True)
+        self.last_high_4h = None
+        self.last_low_4h = None
+
+    def calculate_indicators(self, kline):
+        new_row = pd.Series(kline, index=self.columns)
+        self.df = pd.concat([self.df, new_row.to_frame().T], ignore_index=True)
+        self.df["Date"] = pd.to_datetime(self.df["Date"], unit="ms")
+        self.df.set_index("Date", inplace=True)
+
+        self.df["Close"] = pd.to_numeric(self.df["Close"])
+        self.df["High"] = pd.to_numeric(self.df["High"])
+        self.df["Low"] = pd.to_numeric(self.df["Low"])
+
+        four_hours_ago = self.df.index[-1] - pd.Timedelta(hours=4)
+        recent_data = self.df[self.df.index >= four_hours_ago]
+
+        if not recent_data.empty:
+            high_4h = recent_data["High"].max()
+            low_4h = recent_data["Low"].min()
+        else:
+            high_4h = None
+            low_4h = None
+
+        if high_4h != self.last_high_4h or low_4h != self.last_low_4h:
+            self.last_high_4h = high_4h
+            self.last_low_4h = low_4h
+            print(f"New 4-hour High: {self.last_high_4h}, New 4-hour Low: {self.last_low_4h}")
+
+        last_candle_open = recent_data["Open"].iloc[-1]
+        last_candle_close = recent_data["Close"].iloc[-1]
+        body_size = abs(last_candle_open - last_candle_close)
+
+        if last_candle_close == high_4h:
+            wick_size = last_candle_close - high_4h
+            if wick_size > body_size:
+                print("kahf (big wick at top)")
+        elif last_candle_close == low_4h:
+            wick_size = low_4h - last_candle_open if last_candle_open < low_4h else low_4h - last_candle_close
+            if wick_size > body_size:
+                print("kahf (big wick at bottom)")
+
+        avg_buy_size = self.calculate_average_buy_size(recent_data)
+        avg_sell_size = self.calculate_average_sell_size(recent_data)
+
+        self.df = self.df.round(2)
+        del self.df["x"]
+        del self.df["Ignore"]
+
+        if "icpusdt" in self.name:
+            self.df["sma_10"] = ta.sma(close=self.df["Close"], length=10)
+            self.df["rsi_10"] = ta.rsi(close=self.df["Close"], length=10)
+        elif "adausdt" in self.name:
+            self.df["sma_20"] = ta.sma(close=self.df["Close"], length=20)
+            self.df["rsi_20"] = ta.rsi(close=self.df["Close"], length=20)
+
+        print("DataFrame after appending new kline data:")
+        print(self.df.head())
+        return self.df
+
+    def calculate_average_buy_size(self, recent_data):
+        return recent_data["Buy_Vol"].mean() if not recent_data.empty else 0
+
+    def calculate_average_sell_size(self, recent_data):
+        return recent_data["Sell_Vol"].mean() if not recent_data.empty else 0
+
+
+# name of the file: config.py
+
+streams = [
+    "icpusdt@kline_1m",
+    "adausdt@kline_1m",
+    "ltcusdt@kline_1m"
+]
+
+
+# file name: multiplex_ta.py
+
+import asyncio
+from binance import AsyncClient, BinanceSocketManager
+import collect_data as cd
+import VolumeGetValue as VGV
+import VolumeFields as VF
+from config import streams
+
+async def create_client():
+    return await AsyncClient.create()
+
+data_objs = {stream: cd.GetData(stream) for stream in streams}
+
+def filter_data(kline):
+    data = [
+        kline["t"],
+        float(kline["o"]),
+        float(kline["h"]),
+        float(kline["l"]),
+        float(kline["c"]),
+        float(kline["v"]),
+        kline["T"],
+        round(float(kline["q"]), 2),
+        round(float(kline["n"]), 2),
+        round(float(kline["V"]), 2),
+        round(float(kline["Q"]), 2),
+        kline["B"],
+    ]
+    return data
+
+async def analyse_data(data):
+    if data["data"]["k"]["x"] == True:
+        kline = filter_data(data["data"]["k"])
+        stream = data["stream"]
+        data_obj = data_objs[stream]
+
+        avg_buy_size = VGV.GetValue(data_obj.df, VF.VolumeAnalysisResultItem.AverageBuySize)
+        avg_sell_size = VGV.GetValue(data_obj.df, VF.VolumeAnalysisResultItem.AverageSellSize)
+
+        print(f"Processing stream: {data_obj.name}")
+        df = data_obj.calculate_indicators(kline)
+        print("Updated DataFrame:")
+        print(df)
+
+async def kline_listen(client):
+    bsm = BinanceSocketManager(client)
+    async with bsm.multiplex_socket(streams) as stream:
+        while True:
+            response = await stream.recv()
+            asyncio.create_task(analyse_data(response))
+
+async def main():
+    client = await create_client()
+    await kline_listen(client)
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(main())
+
+
+# file name: VolumeFields.py
+
+from enum import Enum
+
+class VolumeAnalysisResultItem(Enum):
+    AverageBuySize = "AverageBuySize"
+    AverageSellSize = "AverageSellSize"
+
+
+# file name: VolumeGetValue.py
+
+import VolumeFields as VF
+
+resulItem = VF.VolumeAnalysisResultItem
+
+def GetValue(data, item):
+    if item == resulItem.AverageBuySize:
+        return data["Buy_Vol"].iloc[-1] if "Buy_Vol" in data.columns else 0
+    elif item == resulItem.AverageSellSize:
+        return data["Sell_Vol"].iloc[-1] if "Sell_Vol" in data.columns else 0
+    else:
+        return None
