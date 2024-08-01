@@ -60,14 +60,21 @@ class GetData:
             # Calculate the difference between buy and sell volume
             volume_diff = last_candle_buy_vol - last_candle_sell_vol
 
+            # Calculate the buy and sell volume percentages
+            total_volume = last_candle_buy_vol + last_candle_sell_vol
+            buy_vol_percentage = (last_candle_buy_vol / total_volume) * 100 if total_volume > 0 else 0
+            sell_vol_percentage = (last_candle_sell_vol / total_volume) * 100 if total_volume > 0 else 0
+
             # Round the values to 2 decimal places
             last_candle_buy_vol = round(last_candle_buy_vol, 2)
             last_candle_sell_vol = round(last_candle_sell_vol, 2)
             volume_diff = round(volume_diff, 2)
+            buy_vol_percentage = round(buy_vol_percentage, 2)
+            sell_vol_percentage = round(sell_vol_percentage, 2)
 
             # Print the results
-            print(f"Last Candle Buy Volume: {last_candle_buy_vol}")
-            print(f"Last Candle Sell Volume: {last_candle_sell_vol}")
+            print(f"Last Candle Buy Volume: {last_candle_buy_vol} ({buy_vol_percentage}%)")
+            print(f"Last Candle Sell Volume: {last_candle_sell_vol} ({sell_vol_percentage}%)")
             print(f"Volume Difference: {volume_diff}")
 
         # Round the DataFrame values to 2 decimal places
@@ -89,6 +96,6 @@ class GetData:
 
         # Print the DataFrame after appending new kline data for debugging
         print("DataFrame after appending new kline data:")
-        print(self.df.head())
+        print(self.df)
 
         return self.df
