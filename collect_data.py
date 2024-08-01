@@ -1,14 +1,17 @@
+# file name: collect_data.py
+
 import pandas as pd
 import pandas_ta as ta
 
 class GetData:
+
     columns = ["Date", "Open", "High", "Low", "Close", "Volume", "Ignore", "Quote_Volume", "Trades_Count", "Buy_Vol", "Buy_Vol_Val", "x"]
-    
+
     def __init__(self, event):
-        self.name = event 
+        self.name = event
         self.df = pd.DataFrame(columns=self.columns)
         self.df.set_index("Date", inplace=True)
-        
+
         # Initialize variables to track the last 4-hour high and low
         self.last_high_4h = None
         self.last_low_4h = None
@@ -46,26 +49,26 @@ class GetData:
         if high_4h != self.last_high_4h or low_4h != self.last_low_4h:
             self.last_high_4h = high_4h
             self.last_low_4h = low_4h
-            
+
             # Print the new high and low values
             print(f"New 4-hour High: {self.last_high_4h}, New 4-hour Low: {self.last_low_4h}")
 
-            # Check for "big wick" condition based on max high or min low
-            last_candle_open = recent_data["Open"].iloc[-1]
-            last_candle_close = recent_data["Close"].iloc[-1]
-            body_size = abs(last_candle_open - last_candle_close)
+        # Check for "big wick" condition based on max high or min low
+        last_candle_open = recent_data["Open"].iloc[-1]
+        last_candle_close = recent_data["Close"].iloc[-1]
+        body_size = abs(last_candle_open - last_candle_close)
 
-            # If the last candle is at a maximum high
-            if last_candle_close == high_4h:
-                wick_size = last_candle_close - high_4h
-                if wick_size > body_size:  # Check for big wick at the top
-                    print("kahf (big wick at top)")
+        # If the last candle is at a maximum high
+        if last_candle_close == high_4h:
+            wick_size = last_candle_close - high_4h
+            if wick_size > body_size:  # Check for big wick at the top
+                print("kahf (big wick at top)")
 
-            # If the last candle is at a minimum low
-            elif last_candle_close == low_4h:
-                wick_size = low_4h - last_candle_open if last_candle_open < low_4h else low_4h - last_candle_close
-                if wick_size > body_size:  # Check for big wick at the bottom
-                    print("kahf (big wick at bottom)")
+        # If the last candle is at a minimum low
+        elif last_candle_close == low_4h:
+            wick_size = low_4h - last_candle_open if last_candle_open < low_4h else low_4h - last_candle_close
+            if wick_size > body_size:  # Check for big wick at the bottom
+                print("kahf (big wick at bottom)")
 
         # Calculate standard deviation and volatility indicators
         self.df["std"] = self.df["ABS"].rolling(window=99).std()
