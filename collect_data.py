@@ -1,67 +1,94 @@
-# file name: multiplex_ta.py
+# file name: collect_data.py
 
-import asyncio
-from binance import AsyncClient, BinanceSocketManager
-import collect_data as cd
-import VolumeGetValue as VGV
-import VolumeFields as VF
-from config import streams
+import pandas as pd
+import pandas_ta as ta
 
-async def create_client():
-    return await AsyncClient.create()
+class GetData:
 
-data_objs = {stream: cd.GetData(stream) for stream in streams}
+    columns = ["Date", "Open", "High", "Low", "Close", "Volume", "Ignore", "Quote_Volume", "Trades_Count", "Buy_Vol", "Buy_Vol_Val", "x"]
 
-def filter_data(kline):
-    data = [
-        kline["t"],
-        float(kline["o"]),
-        float(kline["h"]),
-        float(kline["l"]),
-        float(kline["c"]),
-        float(kline["v"]),
-        kline["T"],
-        round(float(kline["q"]), 2),
-        round(float(kline["n"]), 2),
-        round(float(kline["V"]), 2),
-        round(float(kline["Q"]), 2),
-        kline["B"],
-    ]
-    return data
+    def __init__(self, event):
+        self.name = event
+        self.df = pd.DataFrame(columns=self.columns)
+        self.df.set_index("Date", inplace=True)
 
-async def analyse_data(data):
-    # Check if the kline is closed
-    if data["data"]["k"]["x"] == True:
-        kline = filter_data(data["data"]["k"])
-        stream = data["stream"]
+        # Initialize variables to track the last 4-hour high and low
+        self.last_high_4h = None
+        self.last_low_4h = None
 
-        # Use the pre-created GetData instance for the stream
-        data_obj = data_objs[stream]
+    def calculate_indicators(self, kline):
+        # Create a new DataFrame for the new row
+        new_row = pd.Series(kline, index=self.columns)
 
-        # Calculate average buy and sell sizes
-        avg_buy_size = VGV.GetValue(data_obj.df, VF.VolumeAnalysisResultItem.AverageBuySize)
-        avg_sell_size = VGV.GetValue(data_obj.df, VF.VolumeAnalysisResultItem.AverageSellSize)
+        # Use pd.concat to add the new row to the DataFrame
+        self.df = pd.concat([self.df, new_row.to_frame().T], ignore_index=True)
 
-        # Print the stream name for debugging
-        print(f"Processing stream: {data_obj.name}")
+        # Convert the 'Date' column to datetime and set it as the index
+        self.df["Date"] = pd.to_datetime(self.df["Date"], unit="ms")
+        self.df.set_index("Date", inplace=True)
 
-        # Update the DataFrame with the new kline data
-        df = data_obj.calculate_indicators(kline, avg_buy_size, avg_sell_size)
+        # Convert the 'Close', 'High', 'Low' columns to numeric
+        self.df["Close"] = pd.to_numeric(self.df["Close"])
+        self.df["High"] = pd.to_numeric(self.df["High"])
+        self.df["Low"] = pd.to_numeric(self.df["Low"])
 
-        # Print the updated DataFrame for debugging
-        print("Updated DataFrame:")
-        print(df)
-async def kline_listen(client):
-    bsm = BinanceSocketManager(client)
-    async with bsm.multiplex_socket(streams) as stream:
-        while True:
-            response = await stream.recv()
-            asyncio.create_task(analyse_data(response))
+        # Calculate the high and low for the last 4 hours (240 minutes)
+        four_hours_ago = self.df.index[-1] - pd.Timedelta(hours=4)
+        recent_data = self.df[self.df.index >= four_hours_ago]
 
-async def main():
-    client = await create_client()
-    await kline_listen(client)
+        if not recent_data.empty:
+            high_4h = recent_data["High"].max()
+            low_4h = recent_data["Low"].min()
+        else:
+            high_4h = None
+            low_4h = None
 
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.run_until_complete(main())
+        # Check if the high and low values have changed
+        if high_4h != self.last_high_4h or low_4h != self.last_low_4h:
+            self.last_high_4h = high_4h
+            self.last_low_4h = low_4h
+
+            # Print the new high and low values
+            print(f"New 4-hour High: {self.last_high_4h}, New 4-hour Low: {self.last_low_4h}")
+
+        # Calculate buy and sell volume for the last candle
+        if not recent_data.empty:
+            last_candle_buy_vol = recent_data["Buy_Vol"].iloc[-1] if "Buy_Vol" in recent_data.columns else 0
+            last_candle_total_vol = recent_data["Volume"].iloc[-1] if "Volume" in recent_data.columns else 0
+            last_candle_sell_vol = last_candle_total_vol - last_candle_buy_vol
+
+            # Calculate the difference between buy and sell volume
+            volume_diff = last_candle_buy_vol - last_candle_sell_vol
+
+            # Round the values to 2 decimal places
+            last_candle_buy_vol = round(last_candle_buy_vol, 2)
+            last_candle_sell_vol = round(last_candle_sell_vol, 2)
+            volume_diff = round(volume_diff, 2)
+
+            # Print the results
+            print(f"Last Candle Buy Volume: {last_candle_buy_vol}")
+            print(f"Last Candle Sell Volume: {last_candle_sell_vol}")
+            print(f"Volume Difference: {volume_diff}")
+
+        # Round the DataFrame values to 2 decimal places
+        self.df = self.df.round(2)
+
+        # Remove the "x" and "Ignore" columns if they exist
+        if "x" in self.df.columns:
+            del self.df["x"]
+        if "Ignore" in self.df.columns:
+            del self.df["Ignore"]
+
+        # Calculate technical indicators
+        if "icpusdt" in self.name:
+            self.df["sma_10"] = ta.sma(close=self.df["Close"], length=10)
+            self.df["rsi_10"] = ta.rsi(close=self.df["Close"], length=10)
+        elif "adausdt" in self.name:
+            self.df["sma_20"] = ta.sma(close=self.df["Close"], length=20)
+            self.df["rsi_20"] = ta.rsi(close=self.df["Close"], length=20)
+
+        # Print the DataFrame after appending new kline data for debugging
+        print("DataFrame after appending new kline data:")
+        print(self.df.head())
+
+        return self.df
