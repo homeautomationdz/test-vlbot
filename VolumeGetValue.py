@@ -1,17 +1,11 @@
-import VolumeFields as VF 
+import VolumeFields as VF
 
 resulItem = VF.VolumeAnalysisResultItem
 
 def GetValue(data, item):
     if item == resulItem.AverageBuySize:
-        if "ABS" in data.columns:
-            return data["ABS"].iloc[-1]
-        else:
-            return 0  # or some default value
+        return data["Buy_Vol"].iloc[-1] if "Buy_Vol" in data.columns and not data.empty else 0
     elif item == resulItem.AverageSellSize:
-        if "ASS" in data.columns:
-            return data["ASS"].iloc[-1]
-        else:
-            return 0  # or some default value
+        return data["Sell_Vol"].iloc[-1] if "Sell_Vol" in data.columns and not data.empty else 0
     else:
         return None
